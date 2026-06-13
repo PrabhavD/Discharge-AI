@@ -65,3 +65,23 @@ npm run test:unblock:ui       # watch doctor flow in browser (headed, slow-mo)
 ## Safety notice
 
 AI outputs are draft-only. Final discharge decisions require authorised human clinician approval. Use fictional mock data only.
+
+## Arthur Mockwell EPR demo
+
+Patient **Arthur Mockwell** (`enc-H011`, NHS `9990001011`) is seeded from the fictional **Patient EPR Record** mock document — post-operative cholecystectomy with a **care package delay** blocker.
+
+```bash
+docker compose up -d
+npm run db:seed
+npm run dev
+```
+
+1. Open [http://localhost:3000](http://localhost:3000) and select **Discharge Coordinator** or **Admin** from the header.
+2. Ward dashboard → click **Mockwell, Arthur** (bed 11).
+3. **Summary tab:** review EPR snapshot — blood results, imaging reports, and clinical notes timeline.
+4. **Questionnaire tab:** confirm pre-seeded answers (medically fit, POC required but not confirmed).
+5. **Summary tab → Generate AI discharge plan:** expect RED status with POC blocker and renal mass follow-up in the summary.
+6. **Tasks & blockers:** resolve the care package blocker once POC is confirmed.
+7. **Documents tab:** generate discharge summary — verify EPR content (imaging, bloods, renal follow-up) in the draft.
+8. **Approval tab:** approve discharge summary document, then final discharge plan approval.
+9. **Audit log:** verify `AI_DISCHARGE_PLAN_GENERATED`, `BLOCKER_RESOLVED`, `DOCUMENT_APPROVED`, `FINAL_DISCHARGE_APPROVAL`.

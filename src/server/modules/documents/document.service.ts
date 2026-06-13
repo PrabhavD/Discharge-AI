@@ -7,6 +7,7 @@ import {
   validatePlanApproval,
 } from "@/server/policy/discharge-policy";
 import { generateWithProvider } from "@/server/ai/orchestrator";
+import { buildAiInput } from "@/server/ai/build-ai-input";
 import { loadEncounterContext } from "@/server/modules/encounters/encounter.service";
 import { UserRole } from "@prisma/client";
 
@@ -107,35 +108,7 @@ export async function generateDraftDocument(
 ) {
   const context = await loadEncounterContext(encounterId);
   const input = {
-    patient: {
-      id: context.patient.id,
-      firstName: context.patient.firstName,
-      lastName: context.patient.lastName,
-      nhsNumber: context.patient.nhsNumber,
-      dateOfBirth: context.patient.dateOfBirth,
-    },
-    encounter: {
-      id: context.id,
-      ward: context.ward,
-      bed: context.bed,
-      specialty: context.specialty,
-      consultantName: context.consultantName,
-      admissionDate: context.admissionDate,
-      expectedDischargeDate: context.expectedDischargeDate,
-    },
-    snapshot: context.clinicalSnapshots[0] ?? null,
-    answers: context.answers.map((a) => ({
-      id: a.id,
-      questionId: a.questionId,
-      domain: a.question.domain,
-      questionText: a.question.questionText,
-      value: a.value,
-    })),
-    freeTextNotes: context.freeTextNotes.map((n) => ({ id: n.id, text: n.text, authorName: n.author.name })),
-    existingTasks: context.tasks.map((t) => ({ title: t.title, status: t.status, domain: t.domain })),
-    existingBlockers: context.blockers.map((b) => ({ title: b.title, severity: b.severity, domain: b.domain })),
-    userRole,
-    outputType: "DRAFT_DOCUMENT" as const,
+    ...buildAiInput(context, userRole, "DRAFT_DOCUMENT"),
     documentType: type,
   };
 
