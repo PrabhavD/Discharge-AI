@@ -4,28 +4,28 @@ overview: Greenfield implementation of Discharge AI as a Next.js full-stack MVP 
 todos:
   - id: phase-1-foundation
     content: Scaffold Next.js + Prisma + Docker + seed data + dev auth/role switcher + audit foundation
-    status: pending
+    status: completed
   - id: phase-2-dashboard
     content: Build ward dashboard API/UI and patient workspace shell with clinical snapshot + manual tasks/blockers
-    status: pending
+    status: completed
   - id: phase-3-questionnaire
     content: Implement structured questionnaire, free-text notes, RBAC, and audit on writes
-    status: pending
+    status: completed
   - id: phase-4-ai
     content: Add mock AI orchestrator, Zod schemas, plan generation UI, accept/edit/reject + source evidence
-    status: pending
+    status: completed
   - id: phase-5-tracking
     content: Sync accepted AI output to tasks/blockers; dashboard filters and escalation metadata
-    status: pending
+    status: completed
   - id: phase-6-docs
     content: Draft discharge summary generation, document review/edit, document approval flow
-    status: pending
+    status: completed
   - id: phase-7-approval
     content: Final approval screen, server-side guards, audit log UI, safety test suite
-    status: pending
+    status: completed
   - id: phase-8-polish
     content: Metrics hooks, AI feedback, hazard log concept, board-round UX polish (stretch)
-    status: pending
+    status: completed
 isProject: false
 ---
 
