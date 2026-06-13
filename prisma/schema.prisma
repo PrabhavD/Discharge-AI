@@ -1,0 +1,549 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  DOCTOR
+  NURSE
+  CONSULTANT
+  PHARMACIST
+  PHYSIOTHERAPIST
+  OCCUPATIONAL_THERAPIST
+  DISCHARGE_COORDINATOR
+  BED_MANAGER
+  ADMIN
+  READ_ONLY
+}
+
+enum DischargeDomain {
+  MEDICAL_READINESS
+  MEDICINES
+  THERAPY_AND_MOBILITY
+  HOME_AND_CARE
+  TRANSPORT
+  FAMILY_COMMUNICATION
+  DOCUMENTATION
+  FOLLOW_UP
+}
+
+enum DomainStatus {
+  GREEN
+  AMBER
+  RED
+  GREY
+  BLUE
+}
+
+enum TaskStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  NOT_APPLICABLE
+}
+
+enum BlockerSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ApprovalStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  CHANGES_REQUESTED
+}
+
+enum DocumentType {
+  DISCHARGE_SUMMARY
+  GP_HANDOVER
+  PATIENT_ADVICE
+  MEDICATION_COUNSELLING
+  OUTSTANDING_RESULTS
+  FOLLOW_UP_PLAN
+}
+
+enum AIOutputType {
+  READINESS_SUMMARY
+  DISCHARGE_PLAN
+  DRAFT_DOCUMENT
+  MISSING_INFORMATION
+  BLOCKER_CLASSIFICATION
+  ESCALATION_SUGGESTION
+}
+
+enum EncounterStatus {
+  ACTIVE
+  DISCHARGED
+  TRANSFERRED
+}
+
+enum ContentSource {
+  AI
+  HUMAN
+}
+
+enum AuditSource {
+  HUMAN
+  AI
+  INTEGRATION
+  SYSTEM
+}
+
+enum IntegrationStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum QuestionType {
+  YES_NO
+  YES_NO_UNKNOWN
+  SELECT
+  TEXT
+}
+
+enum NotificationStatus {
+  DRAFT
+  PENDING
+  SENT
+  FAILED
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  role      UserRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  answers           DischargeAnswer[]
+  freeTextNotes     FreeTextNote[]
+  approvedPlans     DischargePlan[]   @relation("PlanApprover")
+  ownedTasks        DischargeTask[]   @relation("TaskOwner")
+  ownedBlockers     Blocker[]         @relation("BlockerOwner")
+  reviewedDocuments DraftDocument[]   @relation("DocumentReviewer")
+  approvedDocuments DraftDocument[]   @relation("DocumentApprover")
+  approvals         Approval[]
+  auditEvents       AuditEvent[]
+  aiFeedback        AiFeedback[]
+  hazardReports     ClinicalHazardReport[]
+}
+
+model Patient {
+  id             String   @id @default(cuid())
+  nhsNumber      String   @unique
+  hospitalNumber String   @unique
+  firstName      String
+  lastName       String
+  dateOfBirth    DateTime
+  sex            String
+  address        String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  encounters           Encounter[]
+  clinicalSnapshots    ClinicalDataSnapshot[]
+  answers              DischargeAnswer[]
+  freeTextNotes        FreeTextNote[]
+  dischargePlans       DischargePlan[]
+  tasks                DischargeTask[]
+  blockers             Blocker[]
+  draftDocuments       DraftDocument[]
+  approvals            Approval[]
+  auditEvents          AuditEvent[]
+  sourceEvidence       SourceEvidence[]
+  notifications        Notification[]
+  aiFeedback           AiFeedback[]
+  hazardReports        ClinicalHazardReport[]
+}
+
+model Encounter {
+  id                    String          @id @default(cuid())
+  patientId             String
+  ward                  String
+  bed                   String
+  specialty             String
+  consultantName        String
+  admissionDate         DateTime
+  expectedDischargeDate DateTime?
+  dischargeDate         DateTime?
+  status                EncounterStatus @default(ACTIVE)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  patient           Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  clinicalSnapshots ClinicalDataSnapshot[]
+  answers           DischargeAnswer[]
+  freeTextNotes     FreeTextNote[]
+  dischargePlans    DischargePlan[]
+  tasks             DischargeTask[]
+  blockers          Blocker[]
+  draftDocuments    DraftDocument[]
+  approvals         Approval[]
+  auditEvents       AuditEvent[]
+  sourceEvidence    SourceEvidence[]
+  notifications     Notification[]
+  aiFeedback        AiFeedback[]
+  hazardReports     ClinicalHazardReport[]
+
+  @@index([ward, status])
+}
+
+model ClinicalDataSnapshot {
+  id                    String   @id @default(cuid())
+  patientId             String
+  encounterId           String
+  sourceSystem          String   @default("MOCK_EPR")
+  capturedAt            DateTime @default(now())
+  diagnoses             Json     @default("[]")
+  problemList           Json     @default("[]")
+  observations          Json     @default("[]")
+  news2Score            Int?
+  bloodResults          Json     @default("[]")
+  imagingReports        Json     @default("[]")
+  currentMedications    Json     @default("[]")
+  allergies             Json     @default("[]")
+  therapyNotes          Json     @default("[]")
+  nursingNotes          Json     @default("[]")
+  socialHistory         Json     @default("{}")
+  safeguardingFlags     Json     @default("[]")
+  frailtyScore          String?
+  capacityConcerns      Json     @default("[]")
+  pendingInvestigations Json     @default("[]")
+  existingReferrals     Json     @default("[]")
+  rawPayload            Json     @default("{}")
+
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+
+  @@index([encounterId, capturedAt])
+}
+
+model DischargeQuestion {
+  id           String          @id @default(cuid())
+  domain       DischargeDomain
+  questionText String
+  questionType QuestionType    @default(YES_NO_UNKNOWN)
+  requiredRole UserRole
+  isRequired   Boolean         @default(true)
+  order        Int
+  active       Boolean         @default(true)
+  selectOptions Json?
+
+  answers DischargeAnswer[]
+}
+
+model DischargeAnswer {
+  id           String   @id @default(cuid())
+  questionId   String
+  patientId    String
+  encounterId  String
+  answeredById String
+  value        Json
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  question   DischargeQuestion @relation(fields: [questionId], references: [id])
+  patient    Patient           @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter  Encounter         @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  answeredBy User              @relation(fields: [answeredById], references: [id])
+
+  @@unique([questionId, encounterId])
+}
+
+model FreeTextNote {
+  id          String   @id @default(cuid())
+  patientId   String
+  encounterId String
+  authorId    String
+  text        String
+  createdAt   DateTime @default(now())
+
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id])
+
+  @@index([encounterId, createdAt])
+}
+
+model DischargePlan {
+  id                 String         @id @default(cuid())
+  patientId          String
+  encounterId        String
+  generatedBy        ContentSource  @default(AI)
+  overallStatus      DomainStatus   @default(GREY)
+  summary            String
+  readinessRationale Json           @default("[]")
+  missingInformation Json           @default("[]")
+  safetyConcerns     Json           @default("[]")
+  uncertainty        Json           @default("[]")
+  confidence         Float          @default(0)
+  approvalStatus     ApprovalStatus @default(DRAFT)
+  humanApprovalRequired Boolean     @default(true)
+  finalDecisionRequired Boolean     @default(true)
+  aiOutputRaw        Json?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  approvedAt         DateTime?
+  approvedById       String?
+
+  patient       Patient                @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter     Encounter              @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  approvedBy    User?                  @relation("PlanApprover", fields: [approvedById], references: [id])
+  domainStatuses DischargeDomainStatus[]
+  tasks         DischargeTask[]
+  blockers      Blocker[]
+  draftDocuments DraftDocument[]
+  approvals     Approval[]
+  sourceEvidence SourceEvidence[]
+  aiFeedback    AiFeedback[]
+
+  @@index([encounterId, createdAt])
+}
+
+model DischargeDomainStatus {
+  id              String          @id @default(cuid())
+  dischargePlanId String
+  domain          DischargeDomain
+  status          DomainStatus
+  ownerRole       UserRole
+  summary         String
+  actionRequired  String?
+  rationale       String?
+  confidence      Float           @default(0)
+
+  dischargePlan DischargePlan @relation(fields: [dischargePlanId], references: [id], onDelete: Cascade)
+
+  @@unique([dischargePlanId, domain])
+}
+
+model DischargeTask {
+  id              String          @id @default(cuid())
+  patientId       String
+  encounterId     String
+  dischargePlanId String?
+  domain          DischargeDomain
+  title           String
+  description     String?
+  status          TaskStatus      @default(NOT_STARTED)
+  ownerRole       UserRole
+  ownerUserId     String?
+  dueAt           DateTime?
+  priority        TaskPriority    @default(MEDIUM)
+  proposedByAi    Boolean         @default(false)
+  acceptedFromAi  Boolean         @default(false)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  completedAt     DateTime?
+
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter     Encounter      @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  dischargePlan DischargePlan? @relation(fields: [dischargePlanId], references: [id], onDelete: SetNull)
+  ownerUser     User?          @relation("TaskOwner", fields: [ownerUserId], references: [id])
+
+  @@index([encounterId, status])
+}
+
+model Blocker {
+  id                   String          @id @default(cuid())
+  patientId            String
+  encounterId          String
+  dischargePlanId      String?
+  domain               DischargeDomain
+  title                String
+  description          String?
+  severity             BlockerSeverity @default(MEDIUM)
+  status               TaskStatus      @default(BLOCKED)
+  ownerRole            UserRole
+  ownerUserId          String?
+  escalationRoute      String?
+  expectedResolutionAt DateTime?
+  proposedByAi         Boolean         @default(false)
+  acceptedFromAi       Boolean         @default(false)
+  notes                String?
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  resolvedAt           DateTime?
+
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter     Encounter      @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  dischargePlan DischargePlan? @relation(fields: [dischargePlanId], references: [id], onDelete: SetNull)
+  ownerUser     User?          @relation("BlockerOwner", fields: [ownerUserId], references: [id])
+
+  @@index([encounterId, status])
+}
+
+model DraftDocument {
+  id              String         @id @default(cuid())
+  patientId       String
+  encounterId     String
+  dischargePlanId String?
+  type            DocumentType
+  title           String
+  content         String
+  generatedBy     ContentSource  @default(AI)
+  reviewedById    String?
+  approvedById    String?
+  status          ApprovalStatus @default(DRAFT)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  approvedAt      DateTime?
+
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter     Encounter      @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  dischargePlan DischargePlan? @relation(fields: [dischargePlanId], references: [id], onDelete: SetNull)
+  reviewedBy    User?          @relation("DocumentReviewer", fields: [reviewedById], references: [id])
+  approvedBy    User?          @relation("DocumentApprover", fields: [approvedById], references: [id])
+  approvals     Approval[]
+
+  @@index([encounterId, type])
+}
+
+model Approval {
+  id              String         @id @default(cuid())
+  patientId       String
+  encounterId     String
+  dischargePlanId String?
+  documentId      String?
+  approverId      String
+  status          ApprovalStatus
+  comments        String?
+  overrideReason  String?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter     Encounter      @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  dischargePlan DischargePlan? @relation(fields: [dischargePlanId], references: [id], onDelete: SetNull)
+  document      DraftDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  approver      User           @relation(fields: [approverId], references: [id])
+}
+
+model AuditEvent {
+  id          String      @id @default(cuid())
+  actorId     String?
+  patientId   String?
+  encounterId String?
+  eventType   String
+  entityType  String
+  entityId    String?
+  before      Json?
+  after       Json?
+  metadata    Json        @default("{}")
+  source      AuditSource @default(HUMAN)
+  createdAt   DateTime    @default(now())
+
+  actor     User?      @relation(fields: [actorId], references: [id])
+  patient   Patient?   @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+
+  @@index([encounterId, createdAt])
+}
+
+model SourceEvidence {
+  id              String   @id @default(cuid())
+  patientId       String
+  encounterId     String
+  dischargePlanId String?
+  sourceSystem    String
+  sourceType      String
+  sourceId        String
+  label           String
+  excerpt         String
+  capturedAt      DateTime @default(now())
+
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter     Encounter      @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  dischargePlan DischargePlan? @relation(fields: [dischargePlanId], references: [id], onDelete: SetNull)
+}
+
+model Notification {
+  id              String             @id @default(cuid())
+  patientId       String
+  encounterId     String
+  recipientRole   UserRole
+  recipientUserId String?
+  channel         String             @default("INTERNAL")
+  title           String
+  message         String
+  status          NotificationStatus @default(DRAFT)
+  createdAt       DateTime           @default(now())
+  sentAt          DateTime?
+
+  patient   Patient   @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter Encounter @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+}
+
+model IntegrationEvent {
+  id          String            @id @default(cuid())
+  sourceSystem String
+  eventType   String
+  status      IntegrationStatus @default(PENDING)
+  payload     Json              @default("{}")
+  error       String?
+  createdAt   DateTime          @default(now())
+  processedAt DateTime?
+}
+
+model AiFeedback {
+  id              String   @id @default(cuid())
+  patientId       String
+  encounterId     String
+  dischargePlanId String?
+  userId          String
+  outputType      AIOutputType
+  outcome         String
+  reason          String?
+  createdAt       DateTime @default(now())
+
+  patient       Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  encounter     Encounter      @relation(fields: [encounterId], references: [id], onDelete: Cascade)
+  dischargePlan DischargePlan? @relation(fields: [dischargePlanId], references: [id], onDelete: SetNull)
+  user          User           @relation(fields: [userId], references: [id])
+}
+
+model ClinicalHazardReport {
+  id          String   @id @default(cuid())
+  patientId   String?
+  encounterId String?
+  reporterId  String
+  title       String
+  description String
+  severity    String
+  status      String   @default("OPEN")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  patient   Patient?   @relation(fields: [patientId], references: [id], onDelete: SetNull)
+  encounter Encounter? @relation(fields: [encounterId], references: [id], onDelete: SetNull)
+  reporter  User       @relation(fields: [reporterId], references: [id])
+}
+
+model MetricEvent {
+  id        String   @id @default(cuid())
+  eventType String
+  ward      String?
+  encounterId String?
+  metadata  Json     @default("{}")
+  createdAt DateTime @default(now())
+
+  @@index([eventType, createdAt])
+}

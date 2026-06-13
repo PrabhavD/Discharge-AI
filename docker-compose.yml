@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: discharge-ai-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: discharge
+      POSTGRES_PASSWORD: discharge_dev
+      POSTGRES_DB: discharge_ai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
