@@ -1,6 +1,7 @@
 import { DischargeDomain, TaskPriority, TaskStatus, UserRole } from "@prisma/client";
 import { prisma } from "@/server/db/client";
 import { createAuditEvent } from "@/server/modules/audit/audit.service";
+import { recomputePlanStatus } from "@/server/modules/discharge-plan/status-recompute";
 
 export async function listTasks(encounterId: string) {
   return prisma.dischargeTask.findMany({
@@ -81,6 +82,12 @@ export async function updateTask(
     before: existing,
     after: task,
   });
+
+  const statusFlipped =
+    data.status !== undefined && data.status !== existing.status;
+  if (statusFlipped) {
+    await recomputePlanStatus(existing.encounterId, actorId);
+  }
 
   return task;
 }

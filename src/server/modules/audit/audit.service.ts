@@ -31,7 +31,7 @@ export async function createAuditEvent(input: AuditLogInput) {
   });
 }
 
-export async function listAuditEvents(encounterId: string, limit = 100) {
+export async function listAuditEvents(encounterId: string, limit = 250) {
   return prisma.auditEvent.findMany({
     where: { encounterId },
     include: { actor: { select: { id: true, name: true, role: true } } },

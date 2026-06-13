@@ -40,8 +40,15 @@ export async function validatePlanApproval(
     errors.push("High-severity blockers remain unresolved");
   }
 
-  const summary = plan.draftDocuments[0];
-  if (!summary || summary.status !== "APPROVED") {
+  const summary = await prisma.draftDocument.findFirst({
+    where: {
+      encounterId: plan.encounterId,
+      type: "DISCHARGE_SUMMARY",
+      status: "APPROVED",
+    },
+    orderBy: { approvedAt: "desc" },
+  });
+  if (!summary) {
     errors.push("Draft discharge summary must be approved before final plan approval");
   }
 

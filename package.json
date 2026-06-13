@@ -14,7 +14,13 @@
     "db:studio": "prisma studio",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:integration": "vitest run tests/integration",
+    "test:e2e": "playwright test",
+    "test:workflow": "playwright test tests/e2e/full-discharge-workflow.spec.ts",
+    "test:workflow:ui": "SLOW_MO=750 playwright test tests/e2e/full-discharge-workflow.spec.ts --headed",
+    "test:workflow:reset": "tsx tests/helpers/reset-workflow-patient.ts",
+    "test:unblock": "playwright test tests/e2e/doctor-blocker-clear.spec.ts",
+    "test:unblock:ui": "SLOW_MO=750 playwright test tests/e2e/doctor-blocker-clear.spec.ts --headed"
   },
   "dependencies": {
     "@prisma/client": "^6.9.0",

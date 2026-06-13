@@ -1,6 +1,7 @@
 import { BlockerSeverity, DischargeDomain, TaskStatus, UserRole } from "@prisma/client";
 import { prisma } from "@/server/db/client";
 import { createAuditEvent } from "@/server/modules/audit/audit.service";
+import { recomputePlanStatus } from "@/server/modules/discharge-plan/status-recompute";
 
 export async function listBlockers(encounterId: string) {
   return prisma.blocker.findMany({
@@ -93,6 +94,14 @@ export async function updateBlocker(
     before: existing,
     after: blocker,
   });
+
+  // Status-affecting transitions trigger a plan status recompute so the
+  // patient header and ward dashboard reflect the live state.
+  const statusFlipped =
+    data.status !== undefined && data.status !== existing.status;
+  if (statusFlipped) {
+    await recomputePlanStatus(existing.encounterId, actorId);
+  }
 
   return blocker;
 }

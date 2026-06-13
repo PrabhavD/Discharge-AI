@@ -26,8 +26,8 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function loadWorkspace() {
-    setLoading(true);
+  async function loadWorkspace(silent = false) {
+    if (!silent) setLoading(true);
     const res = await fetch(`/api/encounters/${encounterId}/discharge-workspace`);
     if (res.status === 401) {
       setError("Select a demo user from the header.");
@@ -60,7 +60,7 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
     if (!res.ok) alert(result.error ?? "Generation failed");
     else {
       setPlan(result.plan);
-      await loadWorkspace();
+      await loadWorkspace(true);
     }
     setGenerating(false);
   }
@@ -105,7 +105,11 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
             {formatDate(workspace.admissionDate)}
           </p>
         </div>
-        {plan && <StatusBadge status={plan.overallStatus} />}
+        {plan && (
+          <div data-testid="patient-overall-status">
+            <StatusBadge status={plan.overallStatus} />
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 border-b pb-2">
@@ -113,6 +117,7 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
           <button
             key={t.id}
             type="button"
+            data-testid={`tab-${t.id}`}
             onClick={() => setTab(t.id)}
             className={`rounded-md px-3 py-1.5 text-sm ${
               tab === t.id ? "bg-[#005eb8] text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200"
@@ -156,7 +161,7 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
             )}
             <div className="flex gap-2 mt-3">
               <Button variant="secondary" onClick={generateReadiness}>Generate readiness summary</Button>
-              <Button onClick={generatePlan} disabled={generating}>
+              <Button onClick={generatePlan} disabled={generating} data-testid="generate-ai-plan">
                 {generating ? "Generating…" : "Generate AI discharge plan"}
               </Button>
             </div>
@@ -189,8 +194,8 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
 
       {tab === "questionnaire" && (
         <div className="grid md:grid-cols-2 gap-4">
-          <QuestionnairePanel encounterId={encounterId} onSaved={loadWorkspace} />
-          <FreeTextPanel encounterId={encounterId} onSaved={loadWorkspace} />
+          <QuestionnairePanel encounterId={encounterId} onSaved={() => loadWorkspace(true)} />
+          <FreeTextPanel encounterId={encounterId} onSaved={() => loadWorkspace(true)} />
         </div>
       )}
 
@@ -227,7 +232,7 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ action: "accept", planId: plan.id }),
                     });
-                    loadWorkspace();
+                    loadWorkspace(true);
                   }}>Accept suggestions</Button>
                   <Button variant="ghost" onClick={async () => {
                     await fetch(`/api/encounters/${encounterId}/ai/discharge-plan`, {
@@ -235,7 +240,7 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ action: "reject", planId: plan.id, reason: "Clinician rejected" }),
                     });
-                    loadWorkspace();
+                    loadWorkspace(true);
                   }}>Reject</Button>
                 </div>
               </Card>
@@ -276,14 +281,14 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
       )}
 
       {tab === "tasks" && (
-        <TaskBlockerPanel encounterId={encounterId} onUpdated={loadWorkspace} />
+        <TaskBlockerPanel encounterId={encounterId} onUpdated={() => loadWorkspace(true)} />
       )}
 
       {tab === "documents" && (
         <DocumentPanel
           encounterId={encounterId}
           documents={documents}
-          onUpdated={loadWorkspace}
+          onUpdated={() => loadWorkspace(true)}
         />
       )}
 
@@ -293,7 +298,7 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
           checklist={checklist}
           plan={plan}
           documents={documents}
-          onApproved={loadWorkspace}
+          onApproved={() => loadWorkspace(true)}
         />
       )}
 
@@ -333,7 +338,9 @@ function DocumentPanel({
       <AiBanner />
       <div className="flex justify-between items-center">
         <h2 className="font-semibold">Draft documents</h2>
-        <Button variant="secondary" onClick={generateDoc}>Generate discharge summary</Button>
+        <Button variant="secondary" onClick={generateDoc} data-testid="generate-discharge-summary">
+          Generate discharge summary
+        </Button>
       </div>
       {documents.map((doc) => (
         <Card key={doc.id} title={`${DOCUMENT_TYPE_LABELS[doc.type] ?? doc.type} — ${doc.status}`}>
@@ -370,7 +377,9 @@ function DocumentPanel({
                   });
                   onUpdated();
                 }}>Submit for review</Button>
-                <Button onClick={async () => {
+                <Button
+                  data-testid="approve-document"
+                  onClick={async () => {
                   const res = await fetch(`/api/documents/${doc.id}`, { method: "POST" });
                   const data = await res.json();
                   if (!res.ok) alert(data.error);

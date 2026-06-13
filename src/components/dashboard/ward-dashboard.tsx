@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { DEFAULT_WARD_NAME } from "@/lib/constants";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -34,22 +34,41 @@ export function WardDashboard({ wardId }: { wardId: string }) {
   const [filter, setFilter] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadDashboard = useCallback(async () => {
     const params = new URLSearchParams();
     if (filter === "blocked") params.set("blocker", "blocked");
     if (filter.startsWith("status:")) params.set("status", filter.replace("status:", ""));
 
-    fetch(`/api/wards/${wardId}/discharge-dashboard?${params}`)
-      .then(async (r) => {
-        if (r.status === 401) {
-          setError("Select a demo user from the header to continue.");
-          return null;
-        }
-        return r.json();
-      })
-      .then((d) => d && setData(d))
-      .catch(() => setError("Failed to load dashboard"));
+    try {
+      const r = await fetch(`/api/wards/${wardId}/discharge-dashboard?${params}`);
+      if (r.status === 401) {
+        setError("Select a demo user from the header to continue.");
+        return;
+      }
+      const d = await r.json();
+      setData(d);
+    } catch {
+      setError("Failed to load dashboard");
+    }
   }, [wardId, filter]);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // Refresh when the tab regains focus so resolved blockers / completed tasks
+  // from a patient workspace are reflected without a manual reload.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") loadDashboard();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", loadDashboard);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", loadDashboard);
+    };
+  }, [loadDashboard]);
 
   if (error) {
     return (
@@ -65,9 +84,18 @@ export function WardDashboard({ wardId }: { wardId: string }) {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-900">Ward discharge dashboard</h1>
-        <p className="text-slate-600">{DEFAULT_WARD_NAME}</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Ward discharge dashboard</h1>
+          <p className="text-slate-600">{DEFAULT_WARD_NAME}</p>
+        </div>
+        <Button
+          variant="secondary"
+          onClick={loadDashboard}
+          data-testid="refresh-dashboard"
+        >
+          Refresh
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -108,7 +136,11 @@ export function WardDashboard({ wardId }: { wardId: string }) {
             </thead>
             <tbody>
               {rows.map((row) => (
-                <tr key={row.encounterId} className="border-b hover:bg-slate-50">
+                <tr
+                  key={row.encounterId}
+                  className="border-b hover:bg-slate-50"
+                  data-testid={`ward-row-${row.encounterId}`}
+                >
                   <td className="py-2 pr-3">
                     <Link
                       href={`/encounters/${row.encounterId}`}
@@ -121,10 +153,15 @@ export function WardDashboard({ wardId }: { wardId: string }) {
                   <td className="py-2 pr-3">{row.bed}</td>
                   <td className="py-2 pr-3">{row.consultant}</td>
                   <td className="py-2 pr-3">{formatDate(row.expectedDischargeDate)}</td>
-                  <td className="py-2 pr-3">
+                  <td className="py-2 pr-3" data-testid={`ward-status-${row.encounterId}`}>
                     <StatusBadge status={row.readinessStatus} />
                   </td>
-                  <td className="py-2 pr-3 text-red-700">{row.mainBlocker ?? "—"}</td>
+                  <td
+                    className="py-2 pr-3 text-red-700"
+                    data-testid={`ward-blocker-${row.encounterId}`}
+                  >
+                    {row.mainBlocker ?? "—"}
+                  </td>
                   <td className="py-2 pr-3">{row.nextAction}</td>
                   <td className="py-2 pr-3">
                     {row.ownerRole ? ROLE_LABELS[row.ownerRole] ?? row.ownerRole : "—"}

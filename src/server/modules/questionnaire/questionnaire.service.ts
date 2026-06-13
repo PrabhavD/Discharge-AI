@@ -72,7 +72,12 @@ export async function upsertAnswer(input: {
     entityId: answer.id,
     before: existing ? { value: existing.value, notes: existing.notes } : undefined,
     after: { value: answer.value, notes: answer.notes },
-    metadata: { questionId: question.id, domain: question.domain },
+    metadata: {
+      questionId: question.id,
+      domain: question.domain,
+      questionText: question.questionText,
+      answerValue: (input.value as any)?.answer ?? input.value,
+    },
   });
 
   return answer;

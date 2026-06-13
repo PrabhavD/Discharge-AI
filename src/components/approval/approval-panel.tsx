@@ -77,10 +77,12 @@ export function ApprovalPanel({
           </li>
           <li className="flex justify-between">
             <span>Plan approval status</span>
-            <span>{checklist?.planApprovalStatus ?? "DRAFT"}</span>
+            <span data-testid="plan-approval-status">{checklist?.planApprovalStatus ?? "DRAFT"}</span>
           </li>
         </ul>
-        <Button variant="secondary" onClick={checkValidation}>Check approval requirements</Button>
+        <Button variant="secondary" onClick={checkValidation} data-testid="check-approval-requirements">
+          Check approval requirements
+        </Button>
         {validation && (
           <div className="mt-3 text-sm">
             {validation.errors?.length > 0 && (
@@ -104,7 +106,12 @@ export function ApprovalPanel({
           I have reviewed AI-generated content and confirm it reflects my clinical judgement.
         </p>
         <label className="flex items-center gap-2 text-sm mb-4">
-          <input type="checkbox" checked={confirmed} onChange={(e) => setConfirmed(e.target.checked)} />
+          <input
+            type="checkbox"
+            data-testid="approval-confirm"
+            checked={confirmed}
+            onChange={(e) => setConfirmed(e.target.checked)}
+          />
           I confirm clinical responsibility for this approval
         </label>
         <textarea
@@ -112,15 +119,21 @@ export function ApprovalPanel({
           placeholder="Approval comments (optional)"
           value={comments}
           onChange={(e) => setComments(e.target.value)}
+          data-testid="approval-comments"
         />
         <textarea
           className="w-full border rounded p-2 text-sm mb-4"
           placeholder="Override reason (required if RED blockers remain)"
           value={overrideReason}
           onChange={(e) => setOverrideReason(e.target.value)}
+          data-testid="approval-override"
         />
-        {error && <p className="text-red-700 text-sm mb-2">{error}</p>}
-        <Button onClick={approvePlan} disabled={!plan?.id || plan?.approvalStatus === "APPROVED"}>
+        {error && <p className="text-red-700 text-sm mb-2" data-testid="approval-error">{error}</p>}
+        <Button
+          onClick={approvePlan}
+          disabled={!plan?.id || plan?.approvalStatus === "APPROVED"}
+          data-testid="final-approve-plan"
+        >
           Final approve discharge plan
         </Button>
       </Card>

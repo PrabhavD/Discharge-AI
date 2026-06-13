@@ -32,8 +32,34 @@ Copy `.env.example` to `.env`. Key variables:
 ## Tests
 
 ```bash
-npm test
-npm run test:e2e
+npm test                    # all unit tests
+npm run test:integration    # task/blocker resolve workflow (API, fast)
+npm run test:e2e            # all Playwright tests
+```
+
+### Full discharge workflow (Jane Demo)
+
+Idempotent end-to-end test for patient **Jane Demo** (`enc-H001`): questionnaire → AI plan → resolve tasks/blockers → approve summary → final approval.
+
+Prerequisites: `docker compose up -d`, `npm run db:seed`, database reachable via `.env`.
+
+```bash
+npm run test:workflow:reset   # reset Jane Demo to seed baseline (optional)
+npm run test:integration      # API: task/blocker PATCH + checklist + status recompute
+npm run test:workflow         # full discharge E2E (admin role)
+npm run test:workflow:ui      # watch workflow in browser (headed, slow-mo)
+```
+
+The UI run opens Chromium and walks through each tab so you can observe task/blocker resolution and final approval on screen.
+
+### Doctor unblocking workflow
+
+Focused E2E from a **doctor's** perspective: ward dashboard → patient workspace → resolve all blockers → verify RED → GREEN status transition on the patient header AND on the ward dashboard, plus audit log entries. Also covers the failure-rollback path (PATCH fails → optimistic UI rolls back + error banner appears).
+
+```bash
+npm run test:workflow:reset   # optional reset
+npm run test:unblock          # headless doctor blocker-clear E2E
+npm run test:unblock:ui       # watch doctor flow in browser (headed, slow-mo)
 ```
 
 ## Safety notice
