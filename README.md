@@ -2,6 +2,8 @@
 
 AI-assisted discharge coordination for NHS ward teams. Helps clinicians see who may go home today, what is blocking discharge, who owns each action, and what documentation still needs review.
 
+![Ward dashboard — discharge readiness overview for ward 4A](snapshots/DisdashAI-dashboard%20(7).jpeg)
+
 **MVP complete** — ward dashboard, patient workspace, mock EPR snapshots, structured questionnaire, AI discharge plans, task/blocker tracking, draft discharge summaries, human approval, and audit logging. All data is fictional.
 
 > **Not production-ready.** AI outputs are draft-only. Final discharge decisions require authorised human approval. Never use real patient data in development.
