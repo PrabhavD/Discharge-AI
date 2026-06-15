@@ -24,6 +24,42 @@ function scanFreeText(notes: AiInput["freeTextNotes"], keywords: string[]): bool
   return keywords.some((k) => text.includes(k.toLowerCase()));
 }
 
+function scanSnapshotText(snapshot: AiInput["snapshot"], keywords: string[]): boolean {
+  if (!snapshot) return false;
+  const parts: string[] = [];
+  const pushJson = (value: unknown) => {
+    if (typeof value === "string") parts.push(value);
+    else if (Array.isArray(value)) parts.push(JSON.stringify(value));
+    else if (value && typeof value === "object") parts.push(JSON.stringify(value));
+  };
+  pushJson(snapshot.nursingNotes);
+  pushJson(snapshot.therapyNotes);
+  pushJson(snapshot.socialHistory);
+  pushJson(snapshot.pendingInvestigations);
+  pushJson(snapshot.rawPayload);
+  const text = parts.join(" ").toLowerCase();
+  return keywords.some((k) => text.includes(k.toLowerCase()));
+}
+
+function getImagingSummary(snapshot: AiInput["snapshot"]): string | null {
+  const reports = snapshot?.imagingReports as Array<{ modality?: string; conclusion?: string }> | undefined;
+  if (!reports?.length) return null;
+  return reports.map((r) => `${r.modality ?? "Imaging"}: ${r.conclusion ?? "See report"}`).join("; ");
+}
+
+function getBloodSummary(snapshot: AiInput["snapshot"]): string | null {
+  const results = snapshot?.bloodResults as Array<{ test?: string; value?: string; note?: string }> | undefined;
+  if (!results?.length) return null;
+  const latest = results.slice(-3);
+  return latest.map((r) => `${r.test} ${r.value}${r.note ? ` (${r.note})` : ""}`).join("; ");
+}
+
+function hasRenalFollowUp(snapshot: AiInput["snapshot"]): boolean {
+  const pending = snapshot?.pendingInvestigations as string[] | undefined;
+  if (pending?.some((p) => /renal|urology|mass/i.test(p))) return true;
+  return scanSnapshotText(snapshot, ["renal", "urology", "malignancy", "kidney mass"]);
+}
+
 function deriveDomainStatus(answer: string | null, blockKeywords: boolean): DomainStatus {
   if (blockKeywords) return "RED";
   if (answer === "yes") return "GREEN";
@@ -62,6 +98,9 @@ export class MockAiProvider implements AiProvider {
     const ttoBlocked = scanFreeText(input.freeTextNotes, ["tto", "not yet screened", "prescription"]);
     const otBlocked = scanFreeText(input.freeTextNotes, ["ot", "stair assessment", "occupational"]);
     const transportBlocked = scanFreeText(input.freeTextNotes, ["transport", "ambulance"]);
+    const pocBlocked =
+      scanFreeText(input.freeTextNotes, ["package of care", "district nurses", "catchment"]) ||
+      scanSnapshotText(input.snapshot, ["package of care", "district nurses", "catchment", "3 days"]);
 
     const domains = [
       {
@@ -96,11 +135,14 @@ export class MockAiProvider implements AiProvider {
       },
       {
         domain: "HOME_AND_CARE" as DischargeDomain,
-        status: carePackage === "yes" && careConfirmed !== "yes" ? "RED" : deriveDomainStatus(careConfirmed, false),
+        status:
+          carePackage === "yes" && (careConfirmed !== "yes" || pocBlocked) ? "RED" : deriveDomainStatus(careConfirmed, false),
         ownerRole: "DISCHARGE_COORDINATOR" as UserRole,
-        summary: "Home and care needs require coordinator confirmation.",
-        actionRequired: carePackage === "yes" ? "Confirm care package restart." : undefined,
-        rationale: "Home and care structured answers.",
+        summary: pocBlocked
+          ? "Package of care not confirmed — district nursing delay or catchment issue noted in EPR."
+          : "Home and care needs require coordinator confirmation.",
+        actionRequired: carePackage === "yes" || pocBlocked ? "Confirm care package restart." : undefined,
+        rationale: "Home and care structured answers and EPR nursing notes.",
         confidence: 0.65,
         sourceEvidenceIds: input.answers.filter((a) => a.domain === "HOME_AND_CARE").map((a) => a.id),
       },
@@ -168,11 +210,13 @@ export class MockAiProvider implements AiProvider {
         escalationRoute: "Notify discharge coordinator if unresolved by 14:00.",
       });
     }
-    if (carePackage === "yes" && careConfirmed !== "yes") {
+    if (carePackage === "yes" && (careConfirmed !== "yes" || pocBlocked)) {
       blockers.push({
         domain: "HOME_AND_CARE",
-        title: "Care package not confirmed",
-        description: "Community care package restart requires confirmation.",
+        title: pocBlocked ? "Care package not confirmed — district nurses 3-day delay" : "Care package not confirmed",
+        description: pocBlocked
+          ? "District nurses report delay starting package of care; patient may be out of catchment."
+          : "Community care package restart requires confirmation.",
         severity: "HIGH" as const,
         status: "BLOCKED" as const,
         ownerRole: "DISCHARGE_COORDINATOR",
@@ -212,23 +256,39 @@ export class MockAiProvider implements AiProvider {
     if (medicalFit !== "yes") uncertainty.push("Medical fitness is not confirmed by an authorised clinician.");
     if (transportBlocked) uncertainty.push("Transport status is unclear.");
     if (!input.snapshot) uncertainty.push("Clinical data snapshot may be stale or unavailable.");
+    if (hasRenalFollowUp(input.snapshot)) uncertainty.push("Incidental renal mass requires urology follow-up — ensure outpatient plan documented.");
 
     const patientName = `${input.patient.firstName} ${input.patient.lastName}`;
+    const imagingSummary = getImagingSummary(input.snapshot);
+    const bloodSummary = getBloodSummary(input.snapshot);
+    const clinicalContext = [
+      imagingSummary ? `Imaging: ${imagingSummary}` : null,
+      bloodSummary ? `Recent bloods: ${bloodSummary}` : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
 
     return {
       overallStatus,
-      summary: `AI draft assessment: ${patientName} may be dischargeable today if outstanding blockers are resolved. This is not a clinical decision — authorised clinician approval required.`,
+      summary: `AI draft assessment: ${patientName} may be dischargeable once outstanding blockers are resolved${clinicalContext ? `. ${clinicalContext}` : ""}. This is not a clinical decision — authorised clinician approval required.`,
       readinessRationale: [
         { statement: `Patient on ${input.encounter.ward} bed ${input.encounter.bed} under ${input.encounter.consultantName}.`, type: "fact" as const, sourceEvidenceIds: input.snapshot ? ["snapshot"] : [] },
+        ...(imagingSummary ? [{ statement: imagingSummary, type: "fact" as const, sourceEvidenceIds: ["snapshot-imaging"] as string[] }] : []),
+        ...(bloodSummary ? [{ statement: bloodSummary, type: "fact" as const, sourceEvidenceIds: ["snapshot-bloods"] as string[] }] : []),
         ...blockers.map((b) => ({ statement: b.title, type: "fact" as const, sourceEvidenceIds: [] as string[] })),
       ],
       domains,
       tasks,
       blockers,
       missingInformation,
-      safetyConcerns: ttoBlocked
-        ? [{ domain: "MEDICINES", concern: "High-risk medication counselling status may be unclear.", severity: "MEDIUM" as const, recommendedAction: "Pharmacist or doctor to confirm counselling before discharge." }]
-        : [],
+      safetyConcerns: [
+        ...(ttoBlocked
+          ? [{ domain: "MEDICINES", concern: "High-risk medication counselling status may be unclear.", severity: "MEDIUM" as const, recommendedAction: "Pharmacist or doctor to confirm counselling before discharge." }]
+          : []),
+        ...(hasRenalFollowUp(input.snapshot)
+          ? [{ domain: "MEDICAL_READINESS", concern: "Incidental right renal mass requires urology follow-up.", severity: "HIGH" as const, recommendedAction: "Ensure urology referral and safety-netting documented before discharge." }]
+          : []),
+      ],
       draftDocuments: [
         {
           type: "DISCHARGE_SUMMARY",
@@ -255,6 +315,10 @@ export class MockAiProvider implements AiProvider {
 
   private buildDischargeSummary(input: AiInput, status: DomainStatus): string {
     const dx = (input.snapshot?.diagnoses as string[] | undefined)?.join(", ") ?? "See clinical record";
+    const imaging = getImagingSummary(input.snapshot);
+    const bloods = getBloodSummary(input.snapshot);
+    const pending = (input.snapshot?.pendingInvestigations as string[] | undefined)?.join("; ") ?? "";
+    const nursing = (input.snapshot?.nursingNotes as string[] | undefined)?.slice(-2).map((n) => `- ${n}`).join("\n") ?? "";
     return `DRAFT DISCHARGE SUMMARY — REQUIRES CLINICIAN REVIEW
 
 Patient: ${input.patient.firstName} ${input.patient.lastName}
@@ -264,15 +328,18 @@ Consultant: ${input.encounter.consultantName}
 Admission date: ${input.encounter.admissionDate.toISOString().split("T")[0]}
 
 Diagnosis: ${dx}
-
+${imaging ? `\nKey imaging:\n${imaging}\n` : ""}${bloods ? `Recent blood results: ${bloods}\n` : ""}${pending ? `Pending investigations: ${pending}\n` : ""}
 AI-assessed discharge readiness: ${status}
 This document is a draft generated by Discharge AI and must be reviewed, edited, and approved by an authorised clinician before use.
 
-Plan summary:
+Clinical context from EPR:
+${nursing || "- See attached clinical snapshot."}
+
+Ward notes:
 ${input.freeTextNotes.map((n) => `- ${n.text}`).join("\n") || "- No additional free-text context recorded."}
 
-Follow-up: To be confirmed by responsible clinician.
-Safety-netting: To be confirmed by responsible clinician.
+Follow-up: Urology review for incidental renal mass — to be confirmed by responsible clinician.
+Safety-netting: Post-operative cholecystectomy advice — to be confirmed by responsible clinician.
 
 [End of draft — not for clinical use until approved]`;
   }

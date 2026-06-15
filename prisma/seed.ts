@@ -5,6 +5,16 @@ import {
   UserRole,
 } from "@prisma/client";
 import { DEV_USERS } from "../src/server/auth/dev-users";
+import {
+  ARTHUR_BLOCKER,
+  ARTHUR_CLINICAL_SNAPSHOT,
+  ARTHUR_ENCOUNTER,
+  ARTHUR_FREE_TEXT_NOTE,
+  ARTHUR_MOCKWELL,
+  ARTHUR_RAW_PAYLOAD,
+  ARTHUR_SNAPSHOT_ID,
+  ARTHUR_SOURCE_EVIDENCE,
+} from "./data/arthur-mockwell-epr";
 
 const prisma = new PrismaClient();
 
@@ -256,7 +266,178 @@ async function main() {
     }
   }
 
+  await seedArthurMockwell(doctor, nurse);
+
   console.log("Seed complete.");
+}
+
+async function seedArthurMockwell(
+  doctor: Awaited<ReturnType<typeof prisma.user.findFirst>>,
+  nurse: Awaited<ReturnType<typeof prisma.user.findFirst>>
+) {
+  const coordinator = await prisma.user.findFirst({ where: { role: "DISCHARGE_COORDINATOR" } });
+  const pharmacist = await prisma.user.findFirst({ where: { role: "PHARMACIST" } });
+  const physio = await prisma.user.findFirst({ where: { role: "PHYSIOTHERAPIST" } });
+
+  const patient = await prisma.patient.upsert({
+    where: { nhsNumber: ARTHUR_MOCKWELL.nhsNumber },
+    update: {
+      firstName: ARTHUR_MOCKWELL.firstName,
+      lastName: ARTHUR_MOCKWELL.lastName,
+      sex: ARTHUR_MOCKWELL.sex,
+      address: ARTHUR_MOCKWELL.address,
+    },
+    create: {
+      nhsNumber: ARTHUR_MOCKWELL.nhsNumber,
+      hospitalNumber: ARTHUR_MOCKWELL.hospitalNumber,
+      firstName: ARTHUR_MOCKWELL.firstName,
+      lastName: ARTHUR_MOCKWELL.lastName,
+      dateOfBirth: ARTHUR_MOCKWELL.dateOfBirth,
+      sex: ARTHUR_MOCKWELL.sex,
+      address: ARTHUR_MOCKWELL.address,
+    },
+  });
+
+  const encounter = await prisma.encounter.upsert({
+    where: { id: ARTHUR_ENCOUNTER.id },
+    update: {
+      consultantName: ARTHUR_ENCOUNTER.consultantName,
+      specialty: ARTHUR_ENCOUNTER.specialty,
+      expectedDischargeDate: ARTHUR_ENCOUNTER.expectedDischargeDate,
+    },
+    create: {
+      id: ARTHUR_ENCOUNTER.id,
+      patientId: patient.id,
+      ward: ARTHUR_ENCOUNTER.ward,
+      bed: ARTHUR_ENCOUNTER.bed,
+      specialty: ARTHUR_ENCOUNTER.specialty,
+      consultantName: ARTHUR_ENCOUNTER.consultantName,
+      admissionDate: ARTHUR_ENCOUNTER.admissionDate,
+      expectedDischargeDate: ARTHUR_ENCOUNTER.expectedDischargeDate,
+      status: "ACTIVE",
+    },
+  });
+
+  await prisma.clinicalDataSnapshot.upsert({
+    where: { id: ARTHUR_SNAPSHOT_ID },
+    update: {
+      diagnoses: ARTHUR_CLINICAL_SNAPSHOT.diagnoses,
+      problemList: ARTHUR_CLINICAL_SNAPSHOT.problemList,
+      observations: ARTHUR_CLINICAL_SNAPSHOT.observations,
+      news2Score: ARTHUR_CLINICAL_SNAPSHOT.news2Score,
+      bloodResults: ARTHUR_CLINICAL_SNAPSHOT.bloodResults,
+      imagingReports: ARTHUR_CLINICAL_SNAPSHOT.imagingReports,
+      currentMedications: ARTHUR_CLINICAL_SNAPSHOT.currentMedications,
+      allergies: ARTHUR_CLINICAL_SNAPSHOT.allergies,
+      therapyNotes: ARTHUR_CLINICAL_SNAPSHOT.therapyNotes,
+      nursingNotes: ARTHUR_CLINICAL_SNAPSHOT.nursingNotes,
+      socialHistory: ARTHUR_CLINICAL_SNAPSHOT.socialHistory,
+      safeguardingFlags: ARTHUR_CLINICAL_SNAPSHOT.safeguardingFlags,
+      frailtyScore: ARTHUR_CLINICAL_SNAPSHOT.frailtyScore,
+      capacityConcerns: ARTHUR_CLINICAL_SNAPSHOT.capacityConcerns,
+      pendingInvestigations: ARTHUR_CLINICAL_SNAPSHOT.pendingInvestigations,
+      existingReferrals: ARTHUR_CLINICAL_SNAPSHOT.existingReferrals,
+      rawPayload: ARTHUR_RAW_PAYLOAD,
+    },
+    create: {
+      id: ARTHUR_SNAPSHOT_ID,
+      patientId: patient.id,
+      encounterId: encounter.id,
+      sourceSystem: "MOCK_EPR",
+      capturedAt: new Date("2026-01-03T12:00:00Z"),
+      ...ARTHUR_CLINICAL_SNAPSHOT,
+      rawPayload: ARTHUR_RAW_PAYLOAD,
+    },
+  });
+
+  for (const ev of ARTHUR_SOURCE_EVIDENCE) {
+    await prisma.sourceEvidence.upsert({
+      where: { id: ev.id },
+      update: { label: ev.label, excerpt: ev.excerpt },
+      create: {
+        id: ev.id,
+        patientId: patient.id,
+        encounterId: encounter.id,
+        sourceSystem: "MOCK_EPR",
+        sourceType: "ClinicalDataSnapshot",
+        sourceId: ARTHUR_SNAPSHOT_ID,
+        label: ev.label,
+        excerpt: ev.excerpt,
+      },
+    });
+  }
+
+  if (nurse) {
+    await prisma.freeTextNote.upsert({
+      where: { id: "note-H011" },
+      update: { text: ARTHUR_FREE_TEXT_NOTE },
+      create: {
+        id: "note-H011",
+        patientId: patient.id,
+        encounterId: encounter.id,
+        authorId: nurse.id,
+        text: ARTHUR_FREE_TEXT_NOTE,
+      },
+    });
+  }
+
+  const questions = await prisma.dischargeQuestion.findMany();
+  const answerSeeds: Array<{ keyword: string; answer: string; role?: UserRole }> = [
+    { keyword: "medically fit", answer: "yes" },
+    { keyword: "package of care required", answer: "yes" },
+    { keyword: "package of care been confirmed", answer: "no" },
+    { keyword: "physiotherapy cleared", answer: "yes" },
+    { keyword: "occupational therapy cleared", answer: "yes" },
+    { keyword: "next of kin been updated", answer: "yes" },
+    { keyword: "medicines reconciliation", answer: "yes" },
+    { keyword: "pharmacy screened", answer: "yes" },
+    { keyword: "TTO/TTA medications prescribed", answer: "yes" },
+    { keyword: "patient live alone", answer: "yes" },
+  ];
+
+  for (const seed of answerSeeds) {
+    const q = questions.find((item) => item.questionText.toLowerCase().includes(seed.keyword));
+    if (!q) continue;
+    const answerer =
+      seed.role === "PHARMACIST"
+        ? pharmacist
+        : seed.role === "PHYSIOTHERAPIST"
+          ? physio
+          : seed.keyword.includes("package of care been confirmed")
+            ? coordinator
+            : doctor;
+    if (!answerer) continue;
+    await prisma.dischargeAnswer.upsert({
+      where: { questionId_encounterId: { questionId: q.id, encounterId: encounter.id } },
+      update: { value: { answer: seed.answer } },
+      create: {
+        questionId: q.id,
+        patientId: patient.id,
+        encounterId: encounter.id,
+        answeredById: answerer.id,
+        value: { answer: seed.answer },
+      },
+    });
+  }
+
+  await prisma.blocker.upsert({
+    where: { id: ARTHUR_BLOCKER.id },
+    update: {
+      title: ARTHUR_BLOCKER.title,
+      description: ARTHUR_BLOCKER.description,
+    },
+    create: {
+      id: ARTHUR_BLOCKER.id,
+      patientId: patient.id,
+      encounterId: encounter.id,
+      domain: ARTHUR_BLOCKER.domain,
+      title: ARTHUR_BLOCKER.title,
+      description: ARTHUR_BLOCKER.description,
+      severity: ARTHUR_BLOCKER.severity,
+      status: "BLOCKED",
+      ownerRole: ARTHUR_BLOCKER.ownerRole,
+    },
+  });
 }
 
 main()

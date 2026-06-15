@@ -6,7 +6,7 @@ import {
   UserRole,
 } from "@prisma/client";
 import { prisma } from "@/server/db/client";
-import { generateWithProvider, AiInput } from "@/server/ai/orchestrator";
+import { generateWithProvider } from "@/server/ai/orchestrator";
 import {
   DischargePlanJsonSchema,
   ReadinessSummaryJsonSchema,
@@ -16,56 +16,11 @@ import { createAuditEvent } from "@/server/modules/audit/audit.service";
 import { validateAiOutput } from "@/server/policy/discharge-policy";
 import { createBlocker } from "@/server/modules/blockers/blocker.service";
 import { createTask } from "@/server/modules/tasks/task.service";
-
-function buildAiInput(context: Awaited<ReturnType<typeof loadEncounterContext>>, userRole: UserRole): AiInput {
-  const snapshot = context.clinicalSnapshots[0];
-  return {
-    patient: {
-      id: context.patient.id,
-      firstName: context.patient.firstName,
-      lastName: context.patient.lastName,
-      nhsNumber: context.patient.nhsNumber,
-      dateOfBirth: context.patient.dateOfBirth,
-    },
-    encounter: {
-      id: context.id,
-      ward: context.ward,
-      bed: context.bed,
-      specialty: context.specialty,
-      consultantName: context.consultantName,
-      admissionDate: context.admissionDate,
-      expectedDischargeDate: context.expectedDischargeDate,
-    },
-    snapshot: snapshot
-      ? {
-          diagnoses: snapshot.diagnoses,
-          news2Score: snapshot.news2Score,
-          currentMedications: snapshot.currentMedications,
-          pendingInvestigations: snapshot.pendingInvestigations,
-        }
-      : null,
-    answers: context.answers.map((a) => ({
-      id: a.id,
-      questionId: a.questionId,
-      domain: a.question.domain,
-      questionText: a.question.questionText,
-      value: a.value,
-    })),
-    freeTextNotes: context.freeTextNotes.map((n) => ({
-      id: n.id,
-      text: n.text,
-      authorName: n.author.name,
-    })),
-    existingTasks: context.tasks.map((t) => ({ title: t.title, status: t.status, domain: t.domain })),
-    existingBlockers: context.blockers.map((b) => ({ title: b.title, severity: b.severity, domain: b.domain })),
-    userRole,
-    outputType: "DISCHARGE_PLAN",
-  };
-}
+import { buildAiInput } from "@/server/ai/build-ai-input";
 
 export async function generateReadinessSummary(encounterId: string, actorId: string, userRole: UserRole) {
   const context = await loadEncounterContext(encounterId);
-  const input = { ...buildAiInput(context, userRole), outputType: "READINESS_SUMMARY" as const };
+  const input = buildAiInput(context, userRole, "READINESS_SUMMARY");
 
   const summary = await generateWithProvider((provider) => provider.generateReadinessSummary(input));
   ReadinessSummaryJsonSchema.parse(summary);
@@ -92,7 +47,7 @@ export async function generateAndPersistDischargePlan(encounterId: string, actor
     throw new Error("Clinical data snapshot unavailable — refresh EPR data or use mock snapshot before generating AI plan");
   }
 
-  const input = buildAiInput(context, userRole);
+  const input = buildAiInput(context, userRole, "DISCHARGE_PLAN");
   const planJson = await generateWithProvider((provider) => provider.generateDischargePlan(input));
   DischargePlanJsonSchema.parse(planJson);
   validateAiOutput(planJson);

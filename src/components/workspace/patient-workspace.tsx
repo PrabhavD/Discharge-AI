@@ -130,14 +130,65 @@ export function PatientWorkspace({ encounterId }: { encounterId: string }) {
 
       {tab === "summary" && (
         <div className="grid md:grid-cols-2 gap-4">
-          <Card title="Clinical snapshot (EPR)">
+          <Card title="Clinical snapshot (EPR)" className="md:col-span-2">
             {snapshot ? (
-              <dl className="space-y-2 text-sm">
-                <div><dt className="text-slate-500">Diagnoses</dt><dd>{(snapshot.diagnoses as string[]).join(", ")}</dd></div>
-                <div><dt className="text-slate-500">NEWS2</dt><dd>{snapshot.news2Score ?? "—"}</dd></div>
-                <div><dt className="text-slate-500">Allergies</dt><dd>{(snapshot.allergies as string[]).join(", ") || "None recorded"}</dd></div>
-                <div><dt className="text-slate-500">Captured</dt><dd>{formatDateTime(snapshot.capturedAt)}</dd></div>
-              </dl>
+              <div className="space-y-4 text-sm">
+                <dl className="grid sm:grid-cols-2 gap-3">
+                  <div><dt className="text-slate-500">Diagnoses</dt><dd>{(snapshot.diagnoses as string[]).join(", ")}</dd></div>
+                  <div><dt className="text-slate-500">NEWS2</dt><dd>{snapshot.news2Score ?? "—"}</dd></div>
+                  <div><dt className="text-slate-500">Frailty</dt><dd>{snapshot.frailtyScore ?? "—"}</dd></div>
+                  <div><dt className="text-slate-500">Allergies</dt><dd>{(snapshot.allergies as string[]).join(", ") || "None recorded"}</dd></div>
+                  <div className="sm:col-span-2"><dt className="text-slate-500">Problem list</dt><dd>{((snapshot.problemList as string[]) ?? []).join(", ") || "—"}</dd></div>
+                  <div className="sm:col-span-2"><dt className="text-slate-500">Medications</dt><dd>{((snapshot.currentMedications as Array<{ name: string; dose?: string }>) ?? []).map((m) => `${m.name}${m.dose ? ` ${m.dose}` : ""}`).join(", ") || "—"}</dd></div>
+                  <div><dt className="text-slate-500">Captured</dt><dd>{formatDateTime(snapshot.capturedAt)}</dd></div>
+                </dl>
+
+                {((snapshot.bloodResults as Array<{ test: string; value: string; unit?: string; date?: string; note?: string }>) ?? []).length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-slate-700 mb-2">Blood results</h4>
+                    <ul className="space-y-1">
+                      {(snapshot.bloodResults as Array<{ test: string; value: string; unit?: string; note?: string }>).map((r, i) => (
+                        <li key={i} className="text-slate-700">
+                          <span className="font-medium">{r.test}</span> {r.value}{r.unit ? ` ${r.unit}` : ""}
+                          {r.note ? <span className="text-slate-500"> — {r.note}</span> : null}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {((snapshot.imagingReports as Array<{ modality?: string; date?: string; author?: string; conclusion?: string }>) ?? []).length > 0 && (
+                  <div>
+                    <h4 className="font-medium text-slate-700 mb-2">Imaging reports</h4>
+                    <ul className="space-y-3">
+                      {(snapshot.imagingReports as Array<{ modality?: string; date?: string; author?: string; conclusion?: string }>).map((r, i) => (
+                        <li key={i} className="border-l-2 border-slate-200 pl-3">
+                          <div className="font-medium">{r.modality ?? "Imaging"}</div>
+                          {r.date && <div className="text-xs text-slate-400">{formatDateTime(r.date)} · {r.author ?? "Radiology"}</div>}
+                          <p className="text-slate-600 mt-1">{r.conclusion}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {((snapshot.rawPayload as { notes?: Array<{ timestamp: string; author: string; role: string; text: string }> })?.notes ?? []).length > 0 && (
+                  <details className="group">
+                    <summary className="cursor-pointer font-medium text-slate-700 list-none flex items-center gap-2">
+                      <span className="group-open:rotate-90 transition-transform">▸</span>
+                      Clinical notes timeline ({((snapshot.rawPayload as { notes?: unknown[] }).notes ?? []).length} entries)
+                    </summary>
+                    <ul className="mt-2 space-y-2 max-h-80 overflow-y-auto border rounded-md p-3 bg-slate-50">
+                      {((snapshot.rawPayload as { notes: Array<{ timestamp: string; author: string; role: string; text: string }> }).notes).map((n, i) => (
+                        <li key={i} className="border-l-2 border-[#005eb8] pl-3">
+                          <div className="text-xs text-slate-500">{formatDateTime(n.timestamp)} · {n.author} ({n.role})</div>
+                          <p className="text-slate-700">{n.text}</p>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                )}
+              </div>
             ) : (
               <p className="text-amber-700 text-sm">No clinical snapshot — EPR integration unavailable.</p>
             )}
