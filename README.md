@@ -1,4 +1,4 @@
-# Discharge AI
+# DisDash AI
 
 AI-assisted discharge coordination for NHS ward teams. Helps clinicians see who may go home today, what is blocking discharge, who owns each action, and what documentation still needs review.
 
